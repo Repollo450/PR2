@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Realizar Pedido</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            padding: 2.5rem;
+            border-radius: 1rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 500px;
+            width: 100%;
+            border: 1px solid #e5e7eb;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+            color: #374151;
+        }
+        .form-group input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            font-size: 1rem;
+            color: #1f2937;
+            transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+        .form-group input[type="number"]:focus {
+            outline: none;
+            border-color: #4f46e5;
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.2);
+        }
+        .btn-primary {
+            background-color: #4f46e5;
+            color: #ffffff;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-in-out;
+            border: none;
+            width: 100%;
+        }
+        .btn-primary:hover {
+            background-color: #4338ca;
+            transform: translateY(-1px);
+        }
+        .message-box {
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-top: 1.5rem;
+            font-weight: 500;
+            text-align: center;
+        }
+        .message-box.success {
+            background-color: #d1fae5;
+            color: #065f46;
+            border: 1px solid #34d399;
+        }
+        .message-box.error {
+            background-color: #fee2e2;
+            color: #991b1b;
+            border: 1px solid #ef4444;
+        }
+        .text-info {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #4b5563;
+            margin-bottom: 1.5rem;
+            text-align: center;
+        }
+        .btn-logout {
+            background-color: #ef4444;
+            color: #ffffff;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out;
+            border: none;
+            margin-top: 1.5rem;
+            display: block;
+            width: 100%;
+            text-align: center;
+        }
+        .btn-logout:hover {
+            background-color: #dc2626;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">Realizar Pedido</h2>
+        <p id="customerInfo" class="text-info"></p>
+        <form id="orderForm" class="space-y-6">
+            <div class="form-group">
+                <label for="camisetas">Cantidad de Camisetas:</label>
+                <input type="number" id="camisetas" name="camisetas" value="0" min="0" required>
+            </div>
+            <div class="form-group">
+                <label for="pantalones">Cantidad de Pantalones:</label>
+                <input type="number" id="pantalones" name="pantalones" value="0" min="0" required>
+            </div>
+            <div class="form-group">
+                <label for="sudaderas">Cantidad de Sudaderas:</label>
+                <input type="number" id="sudaderas" name="sudaderas" value="0" min="0" required>
+            </div>
+            <button type="submit" class="btn-primary">Enviar Pedido</button>
+        </form>
+        <div id="orderMessageBox" class="message-box hidden"></div>
+        <button id="logoutButton" class="btn-logout">Cerrar Sesión</button>
+    </div>
+
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script>
+        const orderForm = document.getElementById('orderForm');
+        const orderMessageBox = document.getElementById('orderMessageBox');
+        const customerInfo = document.getElementById('customerInfo');
+        const logoutButton = document.getElementById('logoutButton');
+
+        const broker = 'wss://broker.emqx.io:8084/mqtt';
+        const clientId = 'PedidoWeb_' + Math.random().toString(16).substr(2, 8);
+        const topic = 'Ropa'; // Topic para enviar los pedidos
+
+        let client;
+        let loggedInCustomerId = sessionStorage.getItem('loggedInCustomerId');
+
+        // Función para mostrar mensajes al usuario
+        function showMessage(message, type) {
+            orderMessageBox.textContent = message;
+            orderMessageBox.className = `message-box ${type}`;
+            orderMessageBox.classList.remove('hidden');
+            setTimeout(() => {
+                orderMessageBox.classList.add('hidden');
+            }, 5000); // Ocultar mensaje después de 5 segundos
+        }
+
+        // Función para inicializar el cliente MQTT
+        function initMqttClient() {
+            try {
+                client = mqtt.connect(broker, { clientId: clientId });
+
+                client.on('connect', () => {
+                    console.log('Conectado al broker MQTT (Pedidos)');
+                    showMessage('Conectado al servidor MQTT. Listo para enviar pedidos.', 'success');
+                });
+
+                client.on('error', (err) => {
+                    console.error('Error de conexión MQTT (Pedidos):', err);
+                    showMessage('Error al conectar con el servidor MQTT. Inténtalo de nuevo más tarde.', 'error');
+                    client.end();
+                });
+
+                client.on('close', () => {
+                    console.log('Conexión MQTT cerrada (Pedidos)');
+                    showMessage('Conexión MQTT cerrada.', 'error');
+                });
+
+                client.on('reconnect', () => {
+                    console.log('Reconectando al broker MQTT (Pedidos)...');
+                    showMessage('Reconectando al servidor MQTT...', 'error');
+                });
+
+            } catch (e) {
+                console.error("Error al inicializar el cliente MQTT (Pedidos):", e);
+                showMessage('Error crítico al inicializar MQTT. Verifica la consola.', 'error');
+            }
+        }
+
+        // Verificar si el usuario está logueado
+        if (!loggedInCustomerId) {
+            // Using a custom message box instead of alert()
+            // You might want to create a simple modal for this in a real app
+            const modalMessage = "No has iniciado sesión. Redirigiendo a la página de inicio de sesión.";
+            console.warn(modalMessage); // Log to console for debugging
+            // For a simple demo, we'll just redirect after a short delay
+            setTimeout(() => {
+                window.location.href = 'inicio_sesion.html';
+            }, 1000); // Give a moment for the user to see console if open
+        } else {
+            customerInfo.textContent = `Bienvenido, Cliente ID: ${loggedInCustomerId}`;
+            // Inicializar el cliente MQTT solo si el usuario está logueado
+            window.onload = initMqttClient;
+        }
+
+        // Event listener para el envío del formulario de pedido
+        orderForm.addEventListener('submit', (event) => {
+            event.preventDefault(); // Prevenir el envío tradicional del formulario
+
+            if (!client || !client.connected) {
+                showMessage('No conectado al servidor MQTT. Intentando reconectar...', 'error');
+                initMqttClient(); // Intenta reconectar si no está conectado
+                return;
+            }
+
+            const camisetas = parseInt(document.getElementById('camisetas').value);
+            const pantalones = parseInt(document.getElementById('pantalones').value);
+            const sudaderas = parseInt(document.getElementById('sudaderas').value);
+
+            if (camisetas + pantalones + sudaderas <= 0) {
+                showMessage('Por favor, selecciona al menos un artículo para realizar el pedido.', 'error');
+                return;
+            }
+
+            // Recopilar los datos del pedido
+            const orderData = {
+                clienteId: loggedInCustomerId,
+                camisetas: camisetas,
+                pantalones: pantalones,
+                sudaderas: sudaderas,
+                timestamp: new Date().toISOString() // Añadir la hora del pedido
+            };
+
+            // Convertir los datos a una cadena JSON
+            const payload = JSON.stringify(orderData);
+
+            try {
+                // Publicar el mensaje MQTT
+                client.publish(topic, payload, { qos: 1 }, (err) => {
+                    if (err) {
+                        console.error('Error al publicar mensaje MQTT:', err);
+                        showMessage('Error al enviar el pedido. Inténtalo de nuevo.', 'error');
+                    } else {
+                        console.log('Pedido publicado con éxito:', payload);
+                        showMessage('¡Pedido enviado correctamente!', 'success');
+                        orderForm.reset(); // Limpiar el formulario
+                    }
+                });
+            } catch (e) {
+                console.error("Error al intentar publicar el mensaje MQTT:", e);
+                showMessage('Error inesperado al intentar enviar el pedido. Consulta la consola.', 'error');
+            }
+        });
+
+        // Event listener para el botón de cerrar sesión
+        logoutButton.addEventListener('click', () => {
+            sessionStorage.removeItem('loggedInCustomerId'); // Eliminar el ID del cliente de la sesión
+            // Using a custom message box instead of alert()
+            const logoutMessage = "Has cerrado sesión.";
+            console.log(logoutMessage); // Log to console for debugging
+            showMessage(logoutMessage, 'success'); // Show message on the page
+            setTimeout(() => {
+                window.location.href = 'inicio_sesion.html'; // Redirigir a la página de inicio de sesión
+            }, 1500); // Give time for the message to be seen
+        });
+    </script>
+</body>
+</html>
