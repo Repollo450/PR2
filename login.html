@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Cliente</title>
+    <title>Iniciar Sesión</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -22,7 +22,7 @@
             padding: 2.5rem;
             border-radius: 1rem;
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
-            max-width: 500px;
+            max-width: 400px;
             width: 100%;
             border: 1px solid #e5e7eb;
         }
@@ -93,57 +93,43 @@
 </head>
 <body>
     <div class="container">
-        <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">Registro de Cliente</h2>
-        <form id="registrationForm" class="space-y-6">
-            <div class="form-group">
-                <label for="nombre">Nombre Completo:</label>
-                <input type="text" id="nombre" name="nombre" placeholder="Introduce tu nombre completo" required>
-            </div>
-            <div class="form-group">
-                <label for="direccion">Dirección:</label>
-                <input type="text" id="direccion" name="direccion" placeholder="Introduce tu dirección" required>
-            </div>
+        <h2 class="text-3xl font-bold text-center text-gray-800 mb-8">Iniciar Sesión</h2>
+        <form id="loginForm" class="space-y-6">
             <div class="form-group">
                 <label for="gmail">Gmail:</label>
                 <input type="email" id="gmail" name="gmail" placeholder="Introduce tu Gmail" required>
             </div>
             <div class="form-group">
-                <label for="telefono">Teléfono:</label>
-                <input type="tel" id="telefono" name="telefono" placeholder="Introduce tu teléfono" required>
-            </div>
-            <div class="form-group">
                 <label for="password">Contraseña:</label>
                 <input type="password" id="password" name="password" placeholder="Introduce tu contraseña" required>
             </div>
-            <button type="submit" class="btn-primary">Registrarse</button>
+            <button type="submit" class="btn-primary">Acceder</button>
         </form>
-        <div id="registrationMessageBox" class="message-box hidden"></div>
-        <a href="login.html" class="text-link">¿Ya tienes cuenta? Inicia Sesión aquí.</a>
+        <div id="loginMessageBox" class="message-box hidden"></div>
+        <a href="index.html" class="text-link">¿No tienes cuenta? Regístrate aquí.</a>
     </div>
 
     <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
     <script>
-        const registrationForm = document.getElementById('registrationForm');
-        const registrationMessageBox = document.getElementById('registrationMessageBox');
+        const loginForm = document.getElementById('loginForm');
+        const loginMessageBox = document.getElementById('loginMessageBox');
 
         const broker = 'wss://broker.emqx.io:8084/mqtt';
-        const clientId = 'RegistroWeb_' + Math.random().toString(16).substr(2, 8);
-        const topic = 'Cliente';
+        const clientId = 'Prueba_Login_' + Math.random().toString(16).substr(2, 8);
+        const requestTopic = 'LoginRequest'; // Topic para enviar la petición de login
+        const responseTopic = 'LoginResponse/' + clientId; // Topic para recibir la respuesta (único por cliente)
 
         let client;
-
-        // Función para generar un ID de 10 dígitos automáticamente
-        function generateCustomerId() {
-            return Math.floor(1000000000 + Math.random() * 9000000000).toString();
-        }
+        let loginTimeout; // Para manejar el tiempo de espera de la respuesta
 
         // Función para mostrar mensajes al usuario
         function showMessage(message, type) {
-            registrationMessageBox.textContent = message;
-            registrationMessageBox.className = `message-box ${type}`;
-            registrationMessageBox.classList.remove('hidden');
+            loginMessageBox.textContent = message;
+            loginMessageBox.className = `message-box ${type}`;
+            loginMessageBox.classList.remove('hidden');
+            clearTimeout(loginTimeout); // Limpiar cualquier timeout pendiente si se muestra el mensaje manualmente
             setTimeout(() => {
-                registrationMessageBox.classList.add('hidden');
+                loginMessageBox.classList.add('hidden');
             }, 5000); // Ocultar mensaje después de 5 segundos
         }
 
@@ -153,73 +139,103 @@
                 client = mqtt.connect(broker, { clientId: clientId });
 
                 client.on('connect', () => {
-                    console.log('Conectado al broker MQTT (Registro)');
-                    showMessage('Conectado al servidor MQTT.', 'success');
+                    console.log('Conectado al broker MQTT (Login)');
+                    // Suscribirse al topic de respuesta único después de conectar
+                    client.subscribe(responseTopic, { qos: 1 }, (err) => {
+                        if (err) {
+                            console.error('Error al suscribirse al topic de respuesta:', err);
+                            showMessage('Error interno: no se pudo suscribir para la respuesta.', 'error');
+                        } else {
+                            console.log('Suscrito al topic de respuesta:', responseTopic);
+                            showMessage('Conectado al servidor MQTT. Listo para iniciar sesión.', 'success');
+                        }
+                    });
+                });
+
+                client.on('message', (topic, message) => {
+                    if (topic === responseTopic) {
+                        clearTimeout(loginTimeout); // Limpiar el timeout ya que recibimos una respuesta
+                        try {
+                            const response = JSON.parse(message.toString());
+                            console.log('Respuesta de login recibida:', response);
+
+                            if (response.success) {
+                                sessionStorage.setItem('loggedInCustomerId', response.customerId);
+                                showMessage('Inicio de sesión exitoso. Redirigiendo al área de pedidos...', 'success');
+                                setTimeout(() => {
+                                    window.location.href = 'pedido.html'; // Redirigir a la página de pedidos
+                                }, 1500);
+                            } else {
+                                showMessage(response.message || 'Gmail o contraseña incorrectos.', 'error');
+                            }
+                        } catch (e) {
+                            console.error('Error al parsear la respuesta MQTT:', e);
+                            showMessage('Error al procesar la respuesta del servidor.', 'error');
+                        }
+                    }
                 });
 
                 client.on('error', (err) => {
-                    console.error('Error de conexión MQTT (Registro):', err);
+                    console.error('Error de conexión MQTT (Login):', err);
                     showMessage('Error al conectar con el servidor MQTT. Inténtalo de nuevo más tarde.', 'error');
                     client.end();
                 });
 
                 client.on('close', () => {
-                    console.log('Conexión MQTT cerrada (Registro)');
+                    console.log('Conexión MQTT cerrada (Login)');
                     showMessage('Conexión MQTT cerrada.', 'error');
                 });
 
                 client.on('reconnect', () => {
-                    console.log('Reconectando al broker MQTT (Registro)...');
+                    console.log('Reconectando al broker MQTT (Login)...');
                     showMessage('Reconectando al servidor MQTT...', 'error');
                 });
 
             } catch (e) {
-                console.error("Error al inicializar el cliente MQTT (Registro):", e);
+                console.error("Error al inicializar el cliente MQTT (Login):", e);
                 showMessage('Error crítico al inicializar MQTT. Verifica la consola.', 'error');
             }
         }
 
         // Event listener para el envío del formulario
-        registrationForm.addEventListener('submit', (event) => {
+        loginForm.addEventListener('submit', (event) => {
             event.preventDefault(); // Prevenir el envío tradicional del formulario
 
             if (!client || !client.connected) {
                 showMessage('No conectado al servidor MQTT. Intentando reconectar...', 'error');
-                initMqttClient(); // Intenta reconectar si no está conectado
+                initMqttClient();
                 return;
             }
 
-            // Generar el ID del cliente automáticamente
-            const customerId = generateCustomerId();
+            const gmail = document.getElementById('gmail').value;
+            const password = document.getElementById('password').value;
 
-            // Recopilar los datos del formulario
-            const clientData = {
-                id: customerId, // ID generado automáticamente
-                nombre: document.getElementById('nombre').value,
-                direccion: document.getElementById('direccion').value,
-                gmail: document.getElementById('gmail').value,
-                telefono: document.getElementById('telefono').value,
-                password: document.getElementById('password').value // Em uma aplicação real, a senha seria hasheada
+            const loginRequestPayload = {
+                gmail: gmail,
+                password: password,
+                responseTopic: responseTopic // Indicar al servidor a dónde enviar la respuesta
             };
 
-            // Convertir los datos a una cadena JSON
-            const payload = JSON.stringify(clientData);
+            const payload = JSON.stringify(loginRequestPayload);
 
             try {
-                // Publicar el mensaje MQTT
-                client.publish(topic, payload, { qos: 1 }, (err) => {
+                client.publish(requestTopic, payload, { qos: 1 }, (err) => {
                     if (err) {
-                        console.error('Error al publicar mensaje MQTT:', err);
-                        showMessage('Error al enviar datos de registro. Inténtalo de nuevo.', 'error');
+                        console.error('Error al publicar petición de login:', err);
+                        showMessage('Error al enviar la petición de inicio de sesión. Inténtalo de nuevo.', 'error');
                     } else {
-                        console.log('Datos de cliente publicados con éxito:', payload);
-                        showMessage('¡Registro exitoso! Tu ID es: ' + customerId + '. Ya puedes iniciar sesión.', 'success');
-                        registrationForm.reset(); // Limpiar el formulario
+                        console.log('Petición de login publicada con éxito:', payload);
+                        showMessage('Enviando credenciales. Esperando respuesta...', 'success');
+
+                        // Establecer un tiempo de espera para la respuesta
+                        loginTimeout = setTimeout(() => {
+                            showMessage('Tiempo de espera agotado. El servidor no respondió. Inténtalo de nuevo.', 'error');
+                        }, 10000); // 10 segundos de tiempo de espera
                     }
                 });
             } catch (e) {
-                console.error("Error al intentar publicar el mensaje MQTT:", e);
-                showMessage('Error inesperado al intentar registrar. Consulta la consola.', 'error');
+                console.error("Error al intentar publicar la petición de login:", e);
+                showMessage('Error inesperado al intentar publicar la petición de login. Consulta la consola.', 'error');
             }
         });
 
