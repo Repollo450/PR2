@@ -313,7 +313,7 @@
             }
 
             // Generate a unique order ID
-            const orderId = (Math.floor(Math.random() * 9000000000) + 1000000000).toString(36);
+            const orderId = Math.floor(100000 + Math.random() * 900000).toString();
             displayQrCode(orderId); 
 
             // Create order data object
