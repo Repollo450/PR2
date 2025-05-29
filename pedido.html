@@ -314,7 +314,8 @@
 
             // Generate a unique order ID
             const orderId = (Math.floor(Math.random() * 9000000000) + 1000000000).toString(36);
-            console.log('Order ID generated:', orderId); 
+            console.log('Order ID generated:', orderId);
+            displayQrCode(orderId); 
 
             // Create order data object
             const orderData = {
@@ -338,7 +339,6 @@
                     } else {
                         console.log('Order published successfully. Calling displayQrCode.');
                         showMessage(`¡Pedido enviado correctamente! Tu ID de pedido es: ${orderId}`, 'success');
-                        displayQrCode(orderId); // Display QR code for the order
                         orderForm.reset(); // Reset the form fields
                     }
                 });
